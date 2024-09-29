@@ -7,183 +7,188 @@ import time
 import sys
 
 
+def clear() -> None:
+    os.system("cls")
+
+
 class SudokuGen:
 
-    def __init__(self, size=9, difficulty="easy", show_solution=True, delay=False):
-        self.size = size
-        self.array = []
-        self.riddle = []
-        self._calc_box_size()
-        self._phantom_array = []
-        self.difficulty = difficulty
-        self.solution = show_solution
-        self._recursion_limit()
-        self.delay = delay
-        self.delay_time = 0.1
+    def __init__(self, size: int = 9, difficulty: str = "easy", show_solution: bool = True, delay: bool = False) -> None:
+        self._size: int = size
+        self.array: np.ndarray = self.gen_empty_array()
+        self.riddle: np.ndarray = self.gen_empty_array()
+        self._phantom_array: np.ndarray = self._gen_phantom_array()
+        self.difficulty: str = difficulty
+        self.solution: bool = show_solution
+        self.delay: bool = delay
+        self.delay_time: float = 0.1
+        self._quadrant_size: int = self._calc_box_size()
+        self.cur_row = 0
+        self.cur_col = 0
+        sys.setrecursionlimit(100000)
 
-    def gen_empty_field(self):
-        array = []
-        row = []
-        for i in range(0, self.size):
+    def gen_empty_array(self) -> np.ndarray:
+        array: list = []
+        row: list = []
+        for i in range(0, self._size):
             row.append(0)
-        for j in range(0, self.size):
+        for j in range(0, self._size):
             array.append(row)
+        np_array: np.ndarray = np.array(array)
+        return np_array
 
-        self.riddle = np.array(array)
-        self.array = np.array(array)
-        self._gen_phantom_array()
-
-    def _gen_phantom_array(self):
-        self._phantom_array = []
-        row = []
-        for i in range(0, self.size):
-            z_list = []
-            for z in range(0, self.size):
+    def _gen_phantom_array(self) -> np.ndarray:
+        array: list = []
+        row: list = []
+        for i in range(0, self._size):
+            z_list: list = []
+            for z in range(0, self._size):
                 z_list.append(0)
             row.append(z_list)
-        for j in range(0, self.size):
-            self._phantom_array.append(row)
-        self._phantom_array = np.array(self._phantom_array)
+        for j in range(0, self._size):
+            array.append(row)
+        np_array: np.ndarray = np.array(array)
+        return np_array
 
-    def _calc_box_size(self):
-        self._box = self.size**0.5
+    def _calc_box_size(self) -> int:
+        box: int = self._size ** 0.5
+        return box
 
-    def _quadrant_index(self, row, col):
-        quadrant = math.ceil((row + 1) / self._box)
-        index_top = int(quadrant * self._box)
-        index_bot = int(index_top - self._box)
-        quadrant = math.ceil((col + 1) / self._box)
-        index_left = int(quadrant * self._box)
-        index_right = int(index_left - self._box)
+    def _quadrant_bounds(self) -> tuple[int, int, int, int]:
+        quadrant: int = math.ceil((self.cur_row + 1) / self._quadrant_size)
+        index_top: int = int(quadrant * self._quadrant_size)
+        index_bot: int = int(index_top - self._quadrant_size)
+
+        quadrant: int = math.ceil((self.cur_col + 1) / self._quadrant_size)
+        index_left: int = int(quadrant * self._quadrant_size)
+        index_right: int = int(index_left - self._quadrant_size)
+
         return index_top, index_bot, index_left, index_right
 
-    def _gen_solution(self, i_row=0, i_col=0):
-        if self._test_finish():
-            if self.solution:
-                self.clear()
-                # print(f"{self.array}\n")
-                self.sudoku_print(self.array)
-        else:
-            if self.solution:
-                self.clear()
-                # print(f"{self.array}\n")
-                self.sudoku_print(self.array)
-                if self.delay:
-                    time.sleep(self.delay_time)
-            possible_n = []
-            for n in range(1, self.size + 1):
-                if self._test_rules(i_row, i_col, n):
-                    possible_n.append(n)
-                else:
-                    possible_n.append(0)
-            if possible_n.count(0) == self.size:
-                self._go_back(i_row, i_col)
-            else:
-                n_choice = random.choice([x for x in possible_n if x != 0])
-                possible_n.remove(n_choice)
-                possible_n.append(0)
+    def _gen_solution(self) -> None:
+        if self.solution:
+            self.clear_print(self.array)
+            if self.delay:
+                time.sleep(self.delay_time)
+        if not self._test_finish():
+            possible_n: np.ndarray = self._gen_possible_numbers()
+            self._update_array_with_choice(possible_n)
 
-                self.array[i_row][i_col] = n_choice
-                self._phantom_array[:, i_row, i_col] = possible_n
-                if self._test_finish():
-                    self._gen_solution()
-                else:
-                    self._go_forward(i_row, i_col)
+    def _test_rules(self, n: int) -> bool:
+        row_test: bool = self._test_row(n)
+        col_test: bool = self._test_col(n)
+        quadrant_test: bool = self._test_quadrant(n)
+        return row_test and col_test and quadrant_test
 
-    def _test_rules(self, row, col, n):
-        quadrant = self._quadrant_index(row, col)
-        if n in self.array[row]:
-            # print("False because row")
+    def _test_row(self, n: int) -> bool:
+        if n in self.array[self.cur_row]:
             return False
-        elif n in self.array[:, col:(col + 1)]:
-            # print("False because col")
+        else:
+            return True
+
+    def _test_col(self, n: int) -> bool:
+        if n in self.array[:, self.cur_col:(self.cur_col + 1)]:
             return False
-        elif n in self.array[quadrant[1]:quadrant[0], quadrant[3]:quadrant[2]]:
-            # print("False because quart")
+        else:
+            return True
+
+    def _test_quadrant(self, n: int) -> bool:
+        quadrant: tuple[int, int, int, int] = self._quadrant_bounds()
+        if n in self.array[quadrant[1]:quadrant[0], quadrant[3]:quadrant[2]]:
             return False
-        return True
-
-    def clear(self):
-        os.system("cls")
-
-    def _go_back(self, row, col):
-        cell = self._phantom_array[:, row, col].copy()
-        if (self.size + 1) not in cell:
-            self.array[row][col] = 0
-        if col == 0:
-            col = 8
-            row -= 1
         else:
-            col -= 1
+            return True
 
-        cell = self._phantom_array[:, row, col].copy()
-        if (self.size + 1) in cell:
-            self._go_back(row, col)
+    def _go_back(self) -> None:
+        cell: np.ndarray = self._phantom_array[:, self.cur_row, self.cur_col].copy()
+        if (self._size + 1) not in cell:
+            self.array[self.cur_row][self.cur_col]: int = 0
+        self._step_back()
+        cell: np.ndarray = self._phantom_array[:, self.cur_row, self.cur_col].copy()
+        self._update_array_with_choice(cell)
+
+    def _step_back(self) -> None:
+        if self.cur_col == 0:
+            self.cur_col: int = 8
+            self.cur_row -= 1
         else:
-            if (self.size + 1) not in cell:
-                if collections.Counter(cell)[0] == self.size:
-                    self._go_back(row, col)
-                else:
-                    n_choice = random.choice([x for x in cell if x != 0])
-                    cell[cell == n_choice] = 0
-                    self.array[row][col] = n_choice
-                    self._phantom_array[:, row, col] = cell
-                    self._go_forward(row, col)
-            else:
-                self._go_back(row, col)
+            self.cur_col -= 1
 
-
-    def _go_forward(self, row, col):
-        if col == 8:
-            col = 0
-            row += 1
+    def _go_forward(self) -> None:
+        self._step_forward()
+        if self.array[self.cur_row][self.cur_col] != 0:
+            self._phantom_array[:, self.cur_row, self.cur_col] = [self._size + 1 for x in range(0, self._size)]
+            self._go_forward()
         else:
-            col += 1
+            self._gen_solution()
 
-        if self.array[row][col] != 0:
-            self._phantom_array[:, row, col] = [self.size + 1 for x in range(0, self.size)]
-            self._go_forward(row, col)
+    def _step_forward(self) -> None:
+        if self.cur_col == 8:
+            self.cur_col: int = 0
+            self.cur_row += 1
         else:
-            self._gen_solution(row, col)
+            self.cur_col += 1
 
-    def _test_finish(self):
+    def _test_finish(self) -> bool:
         if 0 in self.array:
             return False
         else:
             return True
 
-    def _gen_riddle(self):
-        choices = []
-        if self.difficulty.lower() == "easy":
-            sample = random.randint(int(self._box * 4), int(self._box * 5))
-        elif self.difficulty.lower() == "normal":
-            sample = random.randint(int(self._box * 3), int(self._box * 4))
-        elif self.difficulty.lower() == "hard":
-            sample = random.randint(int(self._box * 2), int(self._box * 3))
+    def _gen_possible_numbers(self) -> np.ndarray:
+        possible_n: list = []
+        for n in range(1, self._size + 1):
+            if self._test_rules(n):
+                possible_n.append(n)
+            else:
+                possible_n.append(0)
+        return np.array(possible_n)
+
+    def _update_array_with_choice(self, possible_n: np.ndarray) -> None:
+        if (self._size + 1) not in possible_n:
+            if collections.Counter(possible_n)[0] == self._size:
+                self._go_back()
+            else:
+                n_choice: int = random.choice([x for x in possible_n if x != 0])
+                possible_n[possible_n == n_choice]: int = 0
+
+                self.array[self.cur_row][self.cur_col]: int = n_choice
+                self._phantom_array[:, self.cur_row, self.cur_col] = possible_n
+                if not self._test_finish():
+                    self._go_forward()
         else:
-            sample = random.randint(int(self._box * 4), int(self._box * 5))
+            self._go_back()
+
+    # change to generate a puzzle with only one solution
+    def _gen_riddle(self) -> None:
+        choices: list = []
+        if self.difficulty.lower() == "easy":
+            sample = random.randint(int(self._quadrant_size * 4), int(self._quadrant_size * 5))
+        elif self.difficulty.lower() == "normal":
+            sample = random.randint(int(self._quadrant_size * 3), int(self._quadrant_size * 4))
+        elif self.difficulty.lower() == "hard":
+            sample = random.randint(int(self._quadrant_size * 2), int(self._quadrant_size * 3))
+        else:
+            sample = random.randint(int(self._quadrant_size * 4), int(self._quadrant_size * 5))
 
         while len(choices) != sample:
-            row = random.randint(0, self.size - 1)
-            col = random.randint(0, self.size - 1)
+            row: int = random.randint(0, self._size - 1)
+            col: int = random.randint(0, self._size - 1)
 
             if (row, col) not in choices:
                 choices.append((row, col))
 
         for t in choices:
-            self.riddle[t[0]][t[1]] = self.array[t[0]][t[1]]
+            self.riddle[t[0]][t[1]]: int = self.array[t[0]][t[1]]
         self.sudoku_print(self.riddle)
 
-    def _recursion_limit(self):
-        sys.setrecursionlimit(10000)
-
-    def sudoku_print(self, array):
+    def sudoku_print(self, array) -> None:
         print("\n")
         for i in range(0, len(array)):
-            row = ""
+            row: str = ""
             for j in range(0, len(array)):
-                if (j + 1) % self._box == 0:
-                    if j + 1 != self.size:
+                if (j + 1) % self._quadrant_size == 0:
+                    if j + 1 != self._size:
                         row += f" {array[i][j]} "
                         row += "|"
                     else:
@@ -191,17 +196,26 @@ class SudokuGen:
                 else:
                     row += f" {array[i][j]} "
             print(row)
-            if (i + 1) % self._box == 0:
-                if (i + 1) != self.size:
+            if (i + 1) % self._quadrant_size == 0:
+                if (i + 1) != self._size:
                     print("----------------------------")
 
-    def solve(self, array):
+    def clear_print(self, array) -> None:
+        clear()
+        self.sudoku_print(array)
+
+    def solve(self, array: np.ndarray) -> None:
+        self.cur_row: int = 0
+        self.cur_col: int = 0
         self.array = array.copy()
         self._gen_phantom_array()
         self._gen_solution()
+        self.clear_print(self.array)
 
-    def gen_sudoku(self):
-        self.gen_empty_field()
+    def gen_sudoku(self) -> np.ndarray:
+        self.cur_row: int = 0
+        self.cur_col: int = 0
+        self.gen_empty_array()
         self._gen_solution()
         self._gen_riddle()
         return self.riddle.copy()
