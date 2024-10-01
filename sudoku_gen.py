@@ -13,19 +13,19 @@ def clear() -> None:
 
 class SudokuGen:
 
-    def __init__(self, size: int = 9, difficulty: str = "easy", show_solution: bool = True, delay: bool = False) -> None:
+    def __init__(self, size: int = 9, difficulty: str = "easy", show_process: bool = False, delay: bool = False) -> None:
         self._size: int = size
         self.array: np.ndarray = self.gen_empty_array()
         self.riddle: np.ndarray = self.gen_empty_array()
         self._phantom_array: np.ndarray = self._gen_phantom_array()
         self.difficulty: str = difficulty
-        self.solution: bool = show_solution
+        self.show_process: bool = show_process
         self.delay: bool = delay
         self.delay_time: float = 0.1
         self._quadrant_size: int = self._calc_box_size()
         self.cur_row = 0
         self.cur_col = 0
-        sys.setrecursionlimit(100000)
+        sys.setrecursionlimit(1000000)
 
     def gen_empty_array(self) -> np.ndarray:
         array: list = []
@@ -51,7 +51,7 @@ class SudokuGen:
         return np_array
 
     def _calc_box_size(self) -> int:
-        box: int = self._size ** 0.5
+        box: int = int(self._size ** 0.5)
         return box
 
     def _quadrant_bounds(self) -> tuple[int, int, int, int]:
@@ -66,7 +66,10 @@ class SudokuGen:
         return index_top, index_bot, index_left, index_right
 
     def _gen_solution(self) -> None:
-        if self.solution:
+        if self.cur_col == 0 and self.cur_row == 0:
+            if self.array[self.cur_row][self.cur_col] != 0:
+                self._phantom_array[:, self.cur_row, self.cur_col] = [self._size + 1 for x in range(0, self._size)]
+        if self.show_process:
             self.clear_print(self.array)
             if self.delay:
                 time.sleep(self.delay_time)
@@ -116,11 +119,11 @@ class SudokuGen:
 
     def _go_forward(self) -> None:
         self._step_forward()
-        if self.array[self.cur_row][self.cur_col] != 0:
-            self._phantom_array[:, self.cur_row, self.cur_col] = [self._size + 1 for x in range(0, self._size)]
-            self._go_forward()
-        else:
-            self._gen_solution()
+        if self._test_in_bounds():
+            if self.array[self.cur_row][self.cur_col] != 0:
+                self._phantom_array[:, self.cur_row, self.cur_col] = [self._size + 1 for x in range(0, self._size)]
+                if not self._test_finish():
+                    self._go_forward()
 
     def _step_forward(self) -> None:
         if self.cur_col == 8:
@@ -130,7 +133,13 @@ class SudokuGen:
             self.cur_col += 1
 
     def _test_finish(self) -> bool:
-        if 0 in self.array:
+        if 0 not in self.array:
+            return True
+        else:
+            return False
+
+    def _test_in_bounds(self) -> bool:
+        if self.cur_row >= self._size:
             return False
         else:
             return True
@@ -153,11 +162,15 @@ class SudokuGen:
                 possible_n[possible_n == n_choice]: int = 0
 
                 self.array[self.cur_row][self.cur_col]: int = n_choice
-                self._phantom_array[:, self.cur_row, self.cur_col] = possible_n
+                self._populate_phantom_array(possible_n)
                 if not self._test_finish():
                     self._go_forward()
+                    self._gen_solution()
         else:
             self._go_back()
+
+    def _populate_phantom_array(self, numbers: np.ndarray) -> None:
+        self._phantom_array[:, self.cur_row, self.cur_col] = numbers
 
     # change to generate a puzzle with only one solution
     def _gen_riddle(self) -> None:
@@ -204,18 +217,132 @@ class SudokuGen:
         clear()
         self.sudoku_print(array)
 
-    def solve(self, array: np.ndarray) -> None:
+    def _gen_possibility_array_start(self):
+        self.go_to_start()
+        self._gen_possibility_array()
+        self.go_to_start()
+
+    def _gen_possibility_array(self) -> None:
+        possible_n = self._gen_possible_numbers()
+        self._populate_phantom_array(possible_n)
+        self._go_forward()
+        if self._test_in_bounds():
+            self._gen_possibility_array()
+
+    def go_to_start(self):
         self.cur_row: int = 0
         self.cur_col: int = 0
+
+    def _unambiguous_cells(self):
+        self.go_to_start()
+        self._gen_possibility_array()
+        self.go_to_start()
+        self._unambiguous_cells_row()
+        self.go_to_start()
+        self._unambiguous_cells_col()
+        self.go_to_start()
+        self._unambiguous_cells_quadrant()
+
+#  works. build for col and quadrants
+    def _unambiguous_cells_row(self):
+        phantom_row: np.ndarray = self._phantom_array[:, self.cur_row, :]
+        counter: int = 0
+        unambiguous_values: list = []
+        counts: tuple[np.ndarray, np.ndarray] = np.unique(phantom_row, return_counts=True)
+        for n in counts[0]:
+            n_count = counts[1][counter]
+            if n_count == 1:
+                unambiguous_values.append(n)
+            counter += 1
+
+        if len(unambiguous_values) > 0:
+            for n in unambiguous_values:
+                for cell in range(0, self._size):
+                    possible_n = phantom_row[:, cell]
+                    if n in possible_n:
+                        self.cur_col = cell
+                        self.array[self.cur_row, self.cur_col] = n
+                        self._gen_possibility_array_start()
+                        self._unambiguous_cells_row()
+        if self.cur_row != 8:
+            self.cur_row += 1
+            self._unambiguous_cells_row()
+
+    def _unambiguous_cells_col(self):
+        phantom_col: np.ndarray = self._phantom_array[:, :, self.cur_col]
+        counter: int = 0
+        unambiguous_values: list = []
+        counts: tuple[np.ndarray, np.ndarray] = np.unique(phantom_col, return_counts=True)
+        for n in counts[0]:
+            n_count = counts[1][counter]
+            if n_count == 1:
+                unambiguous_values.append(n)
+            counter += 1
+
+        if len(unambiguous_values) > 0:
+            for n in unambiguous_values:
+                for cell in range(0, self._size):
+                    possible_n = phantom_col[:, cell]
+                    if n in possible_n:
+                        self.cur_row = cell
+                        self.array[self.cur_row, self.cur_col] = n
+                        self._gen_possibility_array_start()
+                        self._unambiguous_cells_col()
+        if self.cur_col != 8:
+            self.cur_col += 1
+            self._unambiguous_cells_col()
+
+    def _unambiguous_cells_quadrant(self):
+        bounds: tuple = self._quadrant_bounds()
+        phantom_quadrant: np.ndarray = self._phantom_array[:, bounds[1]:bounds[0], bounds[3]:bounds[2]]
+        counter: int = 0
+        unambiguous_values: list = []
+        counts: tuple[np.ndarray, np.ndarray] = np.unique(phantom_quadrant, return_counts=True)
+        for n in counts[0]:
+            n_count = counts[1][counter]
+            if n_count == 1:
+                unambiguous_values.append(n)
+            counter += 1
+        if len(unambiguous_values) > 0:
+            for n in unambiguous_values:
+                for row in range(0, self._quadrant_size):
+                    for col in range(0, self._quadrant_size):
+                        possible_n = phantom_quadrant[:, row, col]
+                        if n in possible_n:
+                            self.array[bounds[1]:bounds[0], bounds[3]:bounds[2]][row, col] = n
+                            self._gen_possibility_array_start()
+                            self._unambiguous_cells_quadrant()
+        if self.cur_col != self._size - self._quadrant_size:
+            self.cur_col += self._quadrant_size
+            self._unambiguous_cells_quadrant()
+        elif self.cur_row != self._size - self._quadrant_size:
+            self.cur_row += self._quadrant_size
+            self._unambiguous_cells_quadrant()
+
+    def test(self, array):
+        pass
+
+    def solve(self, array: np.ndarray) -> None:
+        start = time.time()
         self.array = array.copy()
+        self.soft_solve(array)
+        self.go_to_start()
         self._gen_phantom_array()
         self._gen_solution()
         self.clear_print(self.array)
+        end = time.time() - start
+        print(f"Duration: {end}")
 
     def gen_sudoku(self) -> np.ndarray:
-        self.cur_row: int = 0
-        self.cur_col: int = 0
-        self.gen_empty_array()
-        self._gen_solution()
-        self._gen_riddle()
-        return self.riddle.copy()
+        pass
+
+    def soft_solve(self, array: np.ndarray) -> None:
+        self.go_to_start()
+        self.array = array.copy()
+        self._gen_phantom_array()
+        self._gen_possibility_array()
+        self._unambiguous_cells()
+        if self.show_process:
+            self.clear_print(self.array)
+        if not (array == self.array).all():
+            self.soft_solve(self.array)
